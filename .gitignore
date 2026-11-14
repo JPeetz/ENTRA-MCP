@@ -1,0 +1,15 @@
+# Never commit live tenant artefacts
+.env
+.env.*
+!.env.example
+*.token
+*.jwt
+captures/
+traces/
+*.har
+harness/out/
+evidence/*.private.json
+
+# OS/editor
+.DS_Store
+*.swp
