@@ -7,11 +7,18 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # ubuntu-latest (24.04) no longer provisions Python 3.9 from the toolcache, so the
+    # 3.9 leg runs on 22.04 where it is available. Keeping 3.9 in the matrix matters:
+    # the skeleton claims 3.9+ and that claim should be tested, not assumed.
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.9", "3.12"]
+        include:
+          - os: ubuntu-22.04
+            python-version: "3.9"
+          - os: ubuntu-latest
+            python-version: "3.12"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
