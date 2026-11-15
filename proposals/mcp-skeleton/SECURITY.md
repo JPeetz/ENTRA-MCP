@@ -45,10 +45,21 @@ No network egress. No tenant contact. The gateway never holds a Microsoft creden
 | T16 | Beacon replay / staleness | Old beacon replayed after recovery | 60 s TTL; expired beacon is treated as unreachable | `test_expired_beacon_rejected` |
 | T17 | Oscillation attack | Flap the probe to force mode churn and mint inside windows | Hysteresis both edges (3 fails / 2 successes) | `test_flapping_does_not_degrade` |
 | T18 | Silent behaviour change | Auto-detection switching modes unasked | Opt-in only; every transition audited | `test_disabled_by_default`, `test_transition_is_audited` |
+| T19 | Self-promotion | A continuity token used to bootstrap the gateway into wider authority | `xms_continuity` claim refused at bootstrap | `test_continuity_token_cannot_bootstrap` |
+| T20 | Tenant hijack | A different tenant's admin rebinding the gateway | First bootstrap binds; later mismatches refused | `test_second_tenant_cannot_rebind` |
+| T21 | Key theft / leakage | Stolen API key used to mint | Hashed at rest, constant-time compare, revocable, never in audit log | `test_revoked_key_stops_minting`, `test_plaintext_key_is_not_stored` |
+| T22 | Unauthenticated minting | Calling `/token` without a key | 401 before any session lookup | `test_key_mints_and_keyless_caller_cannot` |
 
-**52 tests total.** The `test_security` and `test_beacon` suites are adversarial by
-construction: each case performs an attack and asserts it is refused. If a guard
-regresses, a test goes red.
+**72 tests total.** The `test_security`, `test_beacon` and `test_admin` suites are
+adversarial by construction: each case performs an attack and asserts it is refused. If a
+guard regresses, a test goes red.
+
+**Unwired hook — stated plainly:** admin token **signature** verification is a hook
+(`verify_admin_claims(validator=...)`) and is *not* wired in this skeleton. Everything else
+about the token is checked (role, tenant, expiry, continuity marker), but until `validator`
+is bound to `https://login.microsoftonline.com/{tid}/discovery/v2.0/keys` the check proves
+what the token *claims*, not who issued it. Faking that would be worse than leaving it
+visible; in production it must be wired and fail closed.
 
 ## Side-channel notes
 

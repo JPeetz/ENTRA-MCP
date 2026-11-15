@@ -39,8 +39,27 @@ def _reset():
 def _post(path, payload, port=PORT, raw=None):
     data = raw if raw is not None else json.dumps(payload).encode()
     req = urllib.request.Request(f"http://127.0.0.1:{port}{path}", data=data,
-                                 headers={"Content-Type": "application/json"})
+                                 headers={"Content-Type": "application/json",
+                                          "X-API-Key": _api_key()})
     return json.load(urllib.request.urlopen(req, timeout=5))
+
+
+_API_KEY = None
+
+
+def _api_key():
+    """A downstream key minted the way production mints it — via an admin bootstrap.
+
+    These tests are attacks from a caller who *has* a key; the keyless case is covered
+    separately in test_admin.py.
+    """
+    global _API_KEY
+    if _API_KEY is None:
+        from continuity.gateway import KEYSTORE
+        _API_KEY, _ = KEYSTORE.issue(tenant_id="test-tenant", label="tests",
+                                     scopes=["continuity.read", "continuity.mint"],
+                                     created_by="tests")
+    return _API_KEY
 
 
 class TestAttacks(unittest.TestCase):

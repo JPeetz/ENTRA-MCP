@@ -12,6 +12,19 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from continuity import downstream                                  # noqa: E402
 from continuity.state import ContinuityState                       # noqa: E402
 
+_KEY = None
+
+
+def _api_key():
+    """Downstream key, minted the way production mints it: via an admin bootstrap."""
+    global _KEY
+    if _KEY is None:
+        from continuity.gateway import KEYSTORE
+        _KEY, _ = KEYSTORE.issue(tenant_id="test-tenant", label="tests",
+                                 scopes=["continuity.read", "continuity.mint"],
+                                 created_by="tests")
+    return _KEY
+
 
 def _reset() -> None:
     srv = downstream._GATEWAY.get("server")
@@ -98,7 +111,7 @@ class TestFallback(unittest.TestCase):
             "http://127.0.0.1:8411/token",
             data=json.dumps({"session_id": s["session_id"], "device_key": "dev-abc",
                              "scopes": ["read"]}).encode(),
-            headers={"Content-Type": "application/json"})
+            headers={"Content-Type": "application/json", "X-API-Key": _api_key()})
         tok = json.load(urllib.request.urlopen(req, timeout=5))
         self.assertEqual(tok["scope"], "read")
 

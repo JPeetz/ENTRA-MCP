@@ -49,6 +49,8 @@ class ContinuityState:
         self.mode: str = "healthy"                   # healthy | degraded | drill
         self.since: int = int(time.time())
         self.seq: int = 1
+        # Bound by the first successful admin bootstrap; every API key must match it.
+        self.tenant_id: Optional[str] = None
 
     # ---- enrolment (performed while healthy) --------------------------------
     def enrol(self, subject: str, audience: str, scopes: List[str],

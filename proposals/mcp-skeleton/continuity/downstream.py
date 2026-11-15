@@ -89,6 +89,14 @@ EXTRA_TOOLS: List[Dict[str, Any]] = [
                     "degrades after 3 consecutive failures and recovers after 2 successes.",
      "inputSchema": {"type": "object", "properties": {
          "enabled": {"type": "boolean"}}, "required": ["enabled"]}},
+    {"name": "admin_bootstrap",
+     "description": "Bootstrap from a tenant administrator's Entra access token: binds the "
+                    "tenant and returns a downstream API key (shown once). The caller must "
+                    "hold an administrative directory role in that tenant.",
+     "inputSchema": {"type": "object", "properties": {
+         "admin_token": {"type": "string",
+                         "description": "Entra access token for an admin account"},
+         "label": {"type": "string"}}, "required": ["admin_token"]}},
 ]
 
 
@@ -171,5 +179,25 @@ def extra_call(name: str, args: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
     if name == "set_auto_mode":
         return _monitor().set_automatic(bool(args["enabled"]))
+
+    if name == "admin_bootstrap":
+        from .admin import verify_admin_claims
+        from .gateway import KEYSTORE, decode_claims
+        claims = decode_claims(str(args["admin_token"]))
+        if claims is None:
+            raise ValueError("admin_token is not a readable JWT")
+        who = verify_admin_claims(claims, expected_tenant=STATE.tenant_id)
+        if STATE.tenant_id is None:
+            STATE.tenant_id = who["tenant_id"]
+        plaintext, rec = KEYSTORE.issue(
+            tenant_id=who["tenant_id"], label=str(args.get("label") or "downstream"),
+            scopes=["continuity.read", "continuity.mint"],
+            created_by=str(who["subject"]))
+        STATE._log("bootstrap", tenant=who["tenant_id"], key_id=rec.id,
+                   admin=who["admin_roles"], subject=who["subject"])
+        return {"api_key": plaintext, "key_id": rec.id, "tenant_id": who["tenant_id"],
+                "scopes": rec.scopes, "admin_roles": who["admin_roles"],
+                "expires_at": rec.expires_at,
+                "note": "shown once; store in your secret manager, never in config"}
 
     return None

@@ -80,6 +80,40 @@ consecutive successes to recover. A single 502 never starts minting. A 401/404 c
 
 Automatic mode is **opt-in** (`set_auto_mode`), so nothing changes behaviour by surprise.
 
+### Bootstrap: tenant administrator → downstream API key
+
+The gateway is not self-authorising. It is bound by **an administrator of your original
+Entra tenant**, and that admin's own account is the only thing that can create it:
+
+```
+POST /admin/bootstrap     Authorization: Bearer <Entra access token of an admin account>
+  → 200 { "api_key": "ok_…", "key_id": …, "tenant_id": …, "scopes": ["continuity.read",
+          "continuity.mint"], "expires_at": …, "note": "shown once" }
+```
+
+What is checked before a key is issued:
+
+| Check | Refusal |
+|---|---|
+| Token carries an administrative directory role (`wids` / `roles`) | `admin_not_authorised` |
+| Token is not expired | `admin_not_authorised` |
+| Token is not one this gateway issued (`xms_continuity`) | `admin_not_authorised` |
+| Tenant matches the already-bound tenant | `admin_not_authorised` |
+| Signature valid (`validator=` hook → Microsoft JWKS) | `admin_not_authorised` |
+
+Accepted administrative roles: Global Administrator, Application Administrator, Cloud
+Application Administrator, Privileged Role Administrator.
+
+The **API key** is what downstream services use. It is deliberately narrower than the admin
+token that created it: it can read continuity state and mint continuity tokens, nothing
+else. It is stored only as a salted HMAC, compared in constant time, tenant-bound,
+revocable, and 90-day limited. The plaintext is returned exactly once and never written to
+the audit ledger.
+
+**The admin token can only do this one thing, once.** It cannot mint continuity tokens, and
+a continuity token can never be used to bootstrap — that direction is closed explicitly,
+because a fallback that can promote itself into its own authority is not a fallback.
+
 Guards that make this safe rather than a permanent bypass:
 
 - **Minting is impossible in `healthy` mode.** The endpoint returns 503 until a mode
