@@ -1,0 +1,182 @@
+[
+  {
+    "id": "F01",
+    "behavior": "A tenant administrator's Entra token bootstraps the gateway: RS256 signature verified against JWKS before any claim is read; tenant bound on first use.",
+    "verification": "python3 -m unittest tests.test_admin -v",
+    "state": "passing",
+    "evidence": "commit 53a1040, verified 2026-11-15",
+    "layers": [
+      {
+        "label": "static",
+        "cmd": "python3 -m py_compile continuity/admin.py continuity/gateway.py",
+        "repair": "Check continuity/admin.py imports and gateway._bootstrap wiring."
+      },
+      {
+        "label": "runtime",
+        "cmd": "python3 -m unittest tests.test_admin",
+        "repair": "Run tests/test_admin.py verbosely; the failing assertion names the guard (role, tenant, expiry, replay, signature)."
+      },
+      {
+        "label": "system",
+        "cmd": "python3 -m unittest tests.test_admin.TestSignatureEnforcement",
+        "repair": "Bootstrap runs over real HTTP here; check BoundedHTTPServer and the /admin/bootstrap route."
+      }
+    ]
+  },
+  {
+    "id": "F02",
+    "behavior": "Downstream services authenticate with tenant-bound API keys: salted-HMAC at rest, constant-time compare, revocable, 90-day expiry, plaintext shown once and never audited.",
+    "verification": "python3 -m unittest tests.test_admin.TestKeyStore tests.test_admin.TestBootstrapOverHttp",
+    "state": "passing",
+    "evidence": "commit 53a1040, verified 2026-11-15",
+    "layers": [
+      {
+        "label": "runtime",
+        "cmd": "python3 -m unittest tests.test_admin.TestKeyStore",
+        "repair": "KeyStore.issue/verify/revoke in continuity/admin.py."
+      }
+    ]
+  },
+  {
+    "id": "F03",
+    "behavior": "Tokens are minted EdDSA (Ed25519) by default and verify with the public key alone; HS256 is opt-in and each verifier refuses the other algorithm.",
+    "verification": "python3 -m unittest tests.test_eddsa -v",
+    "state": "passing",
+    "evidence": "commit 53a1040, verified 2026-11-15",
+    "layers": [
+      {
+        "label": "static",
+        "cmd": "python3 -m py_compile continuity/ed25519.py continuity/tokens.py",
+        "repair": "Syntax/import break in the ed25519 or tokens module."
+      },
+      {
+        "label": "runtime",
+        "cmd": "python3 -m unittest tests.test_eddsa.TestRFC8032Vectors",
+        "repair": "Curve arithmetic regressed. Compare against RFC 8032 7.1 vectors: public key derivation first, then signature bytes. Check the scalar clamp clears the low 3 bits."
+      },
+      {
+        "label": "system",
+        "cmd": "python3 -m unittest tests.test_eddsa.TestJwksOverHttp",
+        "repair": "JWKS publication or the HTTP mint path; check /jwks.json returns an OKP key with no 'd'."
+      }
+    ]
+  },
+  {
+    "id": "F04",
+    "behavior": "A signed beacon is served in every mode (cloud/local/drill), with a 60s TTL, so a service can discover the fallback without configuration.",
+    "verification": "python3 -m unittest tests.test_beacon.TestBeacon",
+    "state": "passing",
+    "evidence": "commit e1439a5, verified 2026-11-15",
+    "layers": [
+      {
+        "label": "runtime",
+        "cmd": "python3 -m unittest tests.test_beacon.TestBeacon",
+        "repair": "continuity/beacon.py build_beacon/verify_beacon; the beacon must be signed with state.beacon_key, not the token key."
+      }
+    ]
+  },
+  {
+    "id": "F05",
+    "behavior": "Outage detection is automatic with hysteresis: 3 consecutive failures degrade, 2 consecutive successes recover; 4xx counts as up; disabled by default.",
+    "verification": "python3 -m unittest tests.test_beacon.TestHealthMonitor",
+    "state": "passing",
+    "evidence": "commit e1439a5, verified 2026-11-15",
+    "layers": [
+      {
+        "label": "runtime",
+        "cmd": "python3 -m unittest tests.test_beacon.TestHealthMonitor",
+        "repair": "Handle thresholds in continuity/health.py; a single failure must never open minting."
+      }
+    ]
+  },
+  {
+    "id": "F06",
+    "behavior": "Conditional Access policy is evaluated offline: exclusions beat inclusions, block wins, unknown controls fail closed.",
+    "verification": "python3 -m unittest tests.test_policy -v",
+    "state": "passing",
+    "evidence": "commit 33a2f5d, verified 2026-11-15",
+    "layers": [
+      {
+        "label": "runtime",
+        "cmd": "python3 -m unittest tests.test_policy",
+        "repair": "continuity/policy.py: check control precedence and the fail-closed branch for unknown controls."
+      }
+    ]
+  },
+  {
+    "id": "F07",
+    "behavior": "Minting is refused outside degraded/drill modes, requires a valid API key before any session lookup, refuses scope escalation and privileged claims, and caps TTL at 3600s.",
+    "verification": "python3 -m unittest tests.test_security tests.test_downstream -v",
+    "state": "passing",
+    "evidence": "commit 53a1040, verified 2026-11-15",
+    "layers": [
+      {
+        "label": "runtime",
+        "cmd": "python3 -m unittest tests.test_security",
+        "repair": "An attack test regressed \u2014 treat it as a live vulnerability, not a flaky test."
+      },
+      {
+        "label": "system",
+        "cmd": "python3 -m unittest tests.test_downstream",
+        "repair": "HTTP round trip: healthy-mode 503, keyless 401, audience pinning."
+      }
+    ]
+  },
+  {
+    "id": "F08",
+    "behavior": "The audit ledger is an HMAC chain: an outsider with write access cannot forge a consistent history; edit or deletion is detectable.",
+    "verification": "python3 -m unittest tests.test_crypto.TestAuditChainKeyed",
+    "state": "passing",
+    "evidence": "commit 53a1040, verified 2026-11-15",
+    "layers": [
+      {
+        "label": "runtime",
+        "cmd": "python3 -m unittest tests.test_crypto.TestAuditChainKeyed",
+        "repair": "continuity/hardening.py AuditChain must MAC with self.key, not a bare hash."
+      }
+    ]
+  },
+  {
+    "id": "F09",
+    "behavior": "CI fails when docs disagree with code, when a credential-shaped string appears, or when any test regresses on 3.9 or 3.12.",
+    "verification": "python3 tools/claim_check.py && python3 tools/secret_scan.py",
+    "state": "passing",
+    "evidence": "commit 33a2f5d, CI run #2 success, verified 2026-11-15",
+    "layers": [
+      {
+        "label": "static",
+        "cmd": "python3 tools/claim_check.py",
+        "repair": "Update the doc that states the wrong count, or the code that changes it \u2014 decide which is true first."
+      },
+      {
+        "label": "static",
+        "cmd": "python3 tools/secret_scan.py",
+        "repair": "Remove the credential. If it is test material, add the path to ALLOWLIST_PATHS with a written reason."
+      }
+    ]
+  },
+  {
+    "id": "F10",
+    "behavior": "Mutual TLS between downstream services and the gateway, so a local process holding a stolen session id and device key cannot mint.",
+    "verification": "python3 -m unittest tests.test_mtls -v",
+    "state": "not_started",
+    "evidence": "",
+    "layers": []
+  },
+  {
+    "id": "F11",
+    "behavior": "Policy evaluation parity: a suite proving evaluate_policy_locally matches the service's decision for the same sign-in context.",
+    "verification": "python3 -m unittest tests.test_policy_parity -v",
+    "state": "not_started",
+    "evidence": "",
+    "layers": []
+  },
+  {
+    "id": "F12",
+    "behavior": "Signing key held in an HSM or KMS, non-exportable, so gateway process compromise does not yield minting authority.",
+    "verification": "python3 -m unittest tests.test_key_custody -v",
+    "state": "not_started",
+    "evidence": "",
+    "layers": []
+  }
+]

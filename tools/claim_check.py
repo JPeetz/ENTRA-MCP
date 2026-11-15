@@ -17,6 +17,12 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SKEL = ROOT / "proposals" / "mcp-skeleton"
 
+# A claim is a present-tense assertion about the current tree. Narrative that says what the
+# repo *used* to be is not a claim, and rewriting history to satisfy a linter would be worse
+# than the drift this check exists to prevent.
+HISTORY_MARKERS = ("shipped", "previously", "was ", "were ", "then", "before", "earlier",
+                   "history", "while running", "used to", "→", "->", "at the time")
+
 WORD_NUMBERS = {"seventeen": 17, "sixteen": 16, "eighteen": 18, "nineteen": 19,
                 "twenty": 20, "thirteen": 13, "fourteen": 14, "fifteen": 15}
 
@@ -53,6 +59,11 @@ def main() -> int:
         rel = path.relative_to(ROOT).as_posix()
         for m in re.finditer(r"\b(\d{1,3})\s+tests\b", text):
             claimed = int(m.group(1))
+            line_start = text.rfind("\n", 0, m.start()) + 1
+            line_end = text.find("\n", m.end())
+            line_text = text[line_start:line_end if line_end > 0 else len(text)].lower()
+            if any(marker in line_text for marker in HISTORY_MARKERS):
+                continue
             if claimed != tests:
                 line = text[:m.start()].count("\n") + 1
                 problems.append(f"{rel}:{line}: says {claimed} tests, code has {tests}")

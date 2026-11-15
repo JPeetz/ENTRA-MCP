@@ -1,0 +1,7 @@
+# No third-party runtime dependencies.
+#
+# The continuation layer must run on a machine that may have no reachable package index —
+# during an outage, precisely. Standard library only: Python 3.9+.
+#
+# This file exists so tooling (and reviewers) can see that the absence of dependencies is a
+# decision, not an oversight. It deliberately pins nothing.

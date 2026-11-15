@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "comment": "Every rule here exists because a real bug or a real review finding produced it. When a human catches a new error category, it becomes a rule here so a machine catches it next time.",
+  "rules": [
+    {
+      "id": "A1",
+      "description": "The gateway must sign with EdDSA, never the shared-key HMAC path",
+      "glob": "proposals/mcp-skeleton/continuity/gateway.py",
+      "forbidden": "(?<![_a-z])mint\\s*\\(",
+      "what": "gateway.py calls mint(...) (HS256, shared key)",
+      "why": "Under HS256 every verifier can also mint; the gateway must use mint_eddsa so verification and minting authority stay separate.",
+      "fix": "In continuity/gateway.py replace mint(... key=state.key ...) with mint_eddsa(... secret=state.signing_secret ...)."
+    },
+    {
+      "id": "A2",
+      "description": "Device keys are never stored in plaintext",
+      "glob": "proposals/mcp-skeleton/continuity/state.py",
+      "forbidden": "self\\.device_key\\s*=",
+      "what": "state.py stores a plaintext device key attribute",
+      "why": "A stolen state snapshot would hand over usable device keys, defeating the hardware binding on token minting.",
+      "fix": "Store only hash_secret(self.salt, device_key) in Session.device_hash and compare with safe_eq."
+    },
+    {
+      "id": "A3",
+      "description": "The gateway binds loopback only",
+      "glob": "proposals/mcp-skeleton/continuity/gateway.py",
+      "forbidden": "0\\.0\\.0\\.0|\\(\"\",\\s*port\\)",
+      "what": "gateway.py binds to a wildcard address",
+      "why": "This service is a local fallback issuer. Exposed on a network it becomes an authentication bypass for anyone who can reach it.",
+      "fix": "Bind 127.0.0.1 in serve_in_thread and BoundedHTTPServer."
+    },
+    {
+      "id": "A4",
+      "description": "No third-party HTTP clients",
+      "glob": "proposals/mcp-skeleton/continuity/*.py",
+      "forbidden": "^\\s*(import|from)\\s+(requests|httpx|aiohttp)\\b",
+      "what": "a non-standard HTTP client was imported",
+      "why": "The fallback path must run on a machine that may have no package index reachable — during an outage, precisely.",
+      "fix": "Use urllib.request (stdlib) and confine it to health.py."
+    },
+    {
+      "id": "A5",
+      "description": "Network egress confined to the health probe",
+      "glob": "proposals/mcp-skeleton/continuity/*.py",
+      "forbidden": "urllib\\.request",
+      "exclude": ["proposals/mcp-skeleton/continuity/health.py"],
+      "what": "urllib.request used outside health.py",
+      "why": "The only sanctioned egress is the identity-plane probe. Anything else is an unreviewed path out of the process.",
+      "fix": "Move the call into health.py, or remove it. The gateway itself must never contact a tenant."
+    },
+    {
+      "id": "A6",
+      "description": "No alg=none, ever",
+      "glob": "proposals/mcp-skeleton/continuity/*.py",
+      "forbidden": "\"alg\"\\s*:\\s*\"none\"|'alg'\\s*:\\s*'none'",
+      "what": "a token header sets alg=none",
+      "why": "alg=none is the classic JWT authentication bypass; no code path may ever emit it.",
+      "fix": "Remove it. Verifiers already refuse anything that is not RS256/EdDSA/HS256 as appropriate."
+    }
+  ]
+}
