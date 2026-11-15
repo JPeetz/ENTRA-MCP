@@ -122,7 +122,7 @@ These are the things the helper can do when an AI asks it.
 | `diff_policy` | "What changed since we saved the rulebook?" |
 | `get_continuity_status` | "How are we doing?" |
 
-## 7. The five things that keep this safe
+## 7. The six things that keep this safe
 
 Read these. They are the point of the project.
 
@@ -134,6 +134,8 @@ Read these. They are the point of the project.
    the list stops checking out.
 5. **The nightlight never lies for long.** It is only trusted for 60 seconds. An old
    nightlight is treated as *broken*, not as *maybe true*.
+6. **Checking a badge does not let you make one.** Everyone can look at the stamp; only the
+   gateway owns the stamp.
 
 ## 8. What you must never do
 
@@ -153,8 +155,9 @@ Being honest is part of the project.
   Microsoft really signed the admin's token, using Microsoft's published public keys. If
   those keys are not loaded, it **refuses to set up at all** rather than trusting what the
   token says. That is on purpose: saying no is safer than guessing.
-- **Continuity badges still use a shared key.** Fine for a fallback, but it means a leaked
-  key could make badges. The next step is the same public/private trick used for the admin.
+- **Badges are now signed with a private key, and checked with a public one.** That is the
+  same trick as the admin's signature: anyone can check a badge, but only the gateway can
+  make one. A shared key is still possible for tiny devices that cannot do the maths.
 - Everything is **synthetic**. No real company data is inside.
 
 ## 10. If you only remember one sentence

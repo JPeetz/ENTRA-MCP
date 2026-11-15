@@ -18,7 +18,7 @@ python3 -m continuity.server        # speaks MCP over stdin/stdout
 
 ```bash
 python3 -m unittest discover -s tests -v
-# 94 tests, all passing
+# 112 tests, all passing
 ```
 
 **New here? Read [`../../docs/GUIDE.md`](../../docs/GUIDE.md) first** — the same project
@@ -149,10 +149,12 @@ Snapshot verification rejects tampered payloads, expired snapshots and stale seq
 signature against the tenant JWKS before any claim is read, and the gateway refuses to
 bootstrap at all when no key set is loaded.
 
-**Still symmetric:** the *continuity tokens this gateway issues* are HMAC-signed with a
-shared key, because an air-gapped fallback cannot do a JWKS round-trip mid-outage. That is a
-documented residual risk, not a hidden one — and the admin credential that authorises the
-gateway is asymmetric, so the crown jewels never depend on it.
+**Real:** the continuity tokens themselves are Ed25519-signed, and the gateway publishes the
+public half at `/jwks.json`. A downstream service can verify a token without being able to
+mint one — which is the whole point, and the reason HS256 is no longer the default.
+
+**Symmetric still exists**, deliberately: post-quantum patience aside, some constrained
+devices cannot do Ed25519. HS256 is available, explicit, and refusable.
 
 **Not implemented:** any network call. This never contacts a tenant.
 

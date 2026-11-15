@@ -1,0 +1,32 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Compile all modules
+        run: python -m compileall -q proposals/mcp-skeleton/continuity
+
+      - name: Run the suite (ResourceWarnings are errors)
+        working-directory: proposals/mcp-skeleton
+        run: python -W error::ResourceWarning -m unittest discover -s tests -v
+
+      - name: Secret scan
+        run: python tools/secret_scan.py
+
+      - name: Docs must not drift from code
+        run: python tools/claim_check.py

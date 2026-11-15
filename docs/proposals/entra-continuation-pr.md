@@ -162,8 +162,11 @@ only the venue differs.
 
 **Attached implementation:** `proposals/mcp-skeleton/` — a runnable, dependency-free stdio
 MCP server implementing the tool contract in §5 **and the downstream failover contract in
-§A4**. Thirteen tools; the local HTTP issuer (`/health`, discovery, `/token`, `/reconcile`)
-runs on loopback inside the same process. All 24 tests pass, including minting refused in
-healthy mode, scope-escalation refused, device-key mismatch refused, TTL capped, and a
-full HTTP round trip that mints and then re-validates a token. Only the snapshot signature
-is a labelled demo stand-in.
+§A4**, plus an always-on beacon and automatic outage detection. Seventeen tools; the local
+HTTP issuer (`/health`, `/.well-known/continuity-beacon.json`, discovery, `/jwks.json`,
+`/token`, `/reconcile`, `/admin/bootstrap`) runs on loopback inside the same process.
+
+All 112 tests pass, including minting refused in healthy mode, scope-escalation refused,
+device-key mismatch refused, TTL capped, admin tokens rejected unless RS256-verified, beacon
+spoofing and replay refused, and a full HTTP round trip that mints an Ed25519-signed token
+and re-validates it using only the published public key.

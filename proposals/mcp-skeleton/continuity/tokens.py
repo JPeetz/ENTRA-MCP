@@ -1,14 +1,12 @@
 """Local token minting for continuity mode.
 
-DESIGN NOTE — read before judging the crypto.
+Two signing modes, one token contract:
 
-This skeleton signs with **HS256 over a pre-shared key**. That is deliberate and it is
-what an air-gapped fallback can actually rely on: downstream services receive the key
-during healthy enrolment, so no JWKS round-trip is needed mid-outage (the whole point).
-
-A production implementation should use **asymmetric** signing (RS256/ES256) with the
-public half published on the local gateway, so any enrolled consumer can verify without
-holding the minting secret. That is called out in the proposal, not hidden here.
+  * **EdDSA (Ed25519)** — default. Consumers verify with the *public* key published at
+    `/jwks.json`, so no consumer holds minting authority. With HS256 every downstream
+    service that can verify can also mint; that is the flaw this default removes.
+  * **HS256** — retained for constrained deployments where a shared key is the only option.
+    Explicit, never silent.
 
 Constraints enforced in code, not in prose:
   * TTL is hard-capped (default 900 s, maximum 3600 s).
@@ -25,9 +23,13 @@ import time
 import uuid
 from typing import Any, Dict, Iterable, List, Optional
 
+from . import ed25519
+
 MAX_TTL_SECONDS = 3600
 DEFAULT_TTL_SECONDS = 900
 ISSUER = "continuity-local"
+ED_KID = "continuity-ed25519-1"
+HS_KID = "continuity-local-1"
 
 FORBIDDEN_SCOPE_PREFIXES = ("Directory.", "RoleManagement.", "Application.ReadWrite")
 FORBIDDEN_CLAIMS = ("roles", "wids", "groups")
@@ -42,19 +44,23 @@ def _b64u_dec(s: str) -> bytes:
     return base64.urlsafe_b64decode(s + pad)
 
 
-def _sign(signing_input: str, key: bytes) -> str:
+def _hs_sign(signing_input: str, key: bytes) -> str:
     return _b64u(hmac.new(key, signing_input.encode(), hashlib.sha256).digest())
 
 
-def mint(subject: str,
-         audience: str,
-         approved_scopes: Iterable[str],
-         requested_scopes: Optional[Iterable[str]],
-         key: bytes,
-         ttl: int = DEFAULT_TTL_SECONDS,
-         extra: Optional[Dict[str, Any]] = None,
-         device_thumbprint: Optional[str] = None) -> Dict[str, Any]:
-    """Mint a short-lived continuity token. Raises ValueError on any guard violation."""
+def _si(header: Dict[str, Any], claims: Dict[str, Any]) -> str:
+    return (f"{_b64u(json.dumps(header, separators=(',', ':')).encode())}."
+            f"{_b64u(json.dumps(claims, separators=(',', ':')).encode())}")
+
+
+def build_claims(subject: str,
+                 audience: str,
+                 approved_scopes: Iterable[str],
+                 requested_scopes: Optional[Iterable[str]],
+                 ttl: int = DEFAULT_TTL_SECONDS,
+                 extra: Optional[Dict[str, Any]] = None,
+                 device_thumbprint: Optional[str] = None) -> Dict[str, Any]:
+    """Validate and assemble claims. Raises ValueError on any guard violation."""
     ttl = min(int(ttl), MAX_TTL_SECONDS)
     if ttl <= 0:
         raise ValueError("ttl must be positive")
@@ -94,41 +100,63 @@ def mint(subject: str,
     # thumbprint so a stolen bearer token is not replayable from another host.
     if device_thumbprint:
         claims["cnf"] = {"jkt": device_thumbprint}
+    return claims
 
-    header = {"alg": "HS256", "typ": "JWT", "kid": "continuity-local-1"}
-    signing_input = f"{_b64u(json.dumps(header, separators=(',', ':')).encode())}." \
-                    f"{_b64u(json.dumps(claims, separators=(',', ':')).encode())}"
-    token = f"{signing_input}.{_sign(signing_input, key)}"
+
+def _pack(claims: Dict[str, Any], header: Dict[str, Any], sig: bytes) -> Dict[str, Any]:
+    token = f"{_si(header, claims)}.{_b64u(sig)}"
     return {"access_token": token, "token_type": "Bearer",
-            "expires_in": ttl, "scope": claims["scp"]}
+            "expires_in": int(claims["exp"]) - int(claims["iat"]),
+            "scope": claims["scp"], "alg": header["alg"]}
 
 
-def verify(token: str, key: bytes, audience: Optional[str] = None,
-           now: Optional[float] = None) -> Dict[str, Any]:
-    """Verify signature and time bounds. Returns {valid, claims|reasons}."""
-    now = time.time() if now is None else now
+def mint(subject: str,
+         audience: str,
+         approved_scopes: Iterable[str],
+         requested_scopes: Optional[Iterable[str]],
+         key: bytes,
+         ttl: int = DEFAULT_TTL_SECONDS,
+         extra: Optional[Dict[str, Any]] = None,
+         device_thumbprint: Optional[str] = None) -> Dict[str, Any]:
+    """HS256 mint. `key` is a shared signing key — every holder can mint."""
+    claims = build_claims(subject, audience, approved_scopes, requested_scopes,
+                          ttl, extra, device_thumbprint)
+    header = {"alg": "HS256", "typ": "JWT", "kid": HS_KID}
+    sig = hmac.new(key, _si(header, claims).encode(), hashlib.sha256).digest()
+    return _pack(claims, header, sig)
+
+
+def mint_eddsa(subject: str,
+               audience: str,
+               approved_scopes: Iterable[str],
+               requested_scopes: Optional[Iterable[str]],
+               secret: bytes,
+               ttl: int = DEFAULT_TTL_SECONDS,
+               extra: Optional[Dict[str, Any]] = None,
+               device_thumbprint: Optional[str] = None) -> Dict[str, Any]:
+    """EdDSA mint. The secret stays here; consumers only ever receive the public key."""
+    claims = build_claims(subject, audience, approved_scopes, requested_scopes,
+                          ttl, extra, device_thumbprint)
+    header = {"alg": "EdDSA", "typ": "JWT", "kid": ED_KID}
+    return _pack(claims, header, ed25519.sign(secret, _si(header, claims).encode()))
+
+
+def _split(token: str):
     try:
-        header_b64, payload_b64, sig = token.split(".")
+        h, p, s = token.split(".")
     except ValueError:
-        return {"valid": False, "reasons": ["malformed token"]}
-
-    expected = _sign(f"{header_b64}.{payload_b64}", key)
-    if not hmac.compare_digest(sig, expected):
-        return {"valid": False, "reasons": ["signature mismatch"]}
-
-    # Algorithm confusion: refuse anything but the one algorithm this issuer uses.
+        return None
     try:
-        header = json.loads(_b64u_dec(header_b64))
+        header = json.loads(_b64u_dec(h))
+        claims = json.loads(_b64u_dec(p))
+        sig = _b64u_dec(s)
     except Exception:
-        return {"valid": False, "reasons": ["undecodable header"]}
-    if header.get("alg") != "HS256":
-        return {"valid": False, "reasons": [f"algorithm refused: {header.get('alg')!r}"]}
+        return None
+    return h, p, header, claims, sig
 
-    try:
-        claims = json.loads(_b64u_dec(payload_b64))
-    except Exception:
-        return {"valid": False, "reasons": ["undecodable payload"]}
 
+def _check_claims(claims: Dict[str, Any], now: float,
+                  audience: Optional[str]) -> List[str]:
     reasons: List[str] = []
     if claims.get("iss") != ISSUER:
         reasons.append(f"unexpected issuer {claims.get('iss')!r}")
@@ -140,6 +168,63 @@ def verify(token: str, key: bytes, audience: Optional[str] = None,
         reasons.append("audience mismatch")
     if not claims.get("xms_continuity"):
         reasons.append("missing continuity marker")
+    return reasons
 
+
+def verify(token: str, key: bytes, audience: Optional[str] = None,
+           now: Optional[float] = None) -> Dict[str, Any]:
+    """Verify an HS256 token. `key` is the shared signing key."""
+    now = time.time() if now is None else now
+    parts = _split(token)
+    if parts is None:
+        return {"valid": False, "reasons": ["malformed token"]}
+    h, p, header, claims, sig = parts
+
+    # Algorithm check first: an EdDSA token must never be validated with a shared secret.
+    if header.get("alg") != "HS256":
+        return {"valid": False, "reasons": [f"algorithm refused: {header.get('alg')!r}"]}
+
+    expected = _hs_sign(f"{h}.{p}", key)
+    if not hmac.compare_digest(_b64u(sig), expected):
+        return {"valid": False, "reasons": ["signature mismatch"]}
+
+    reasons = _check_claims(claims, now, audience)
     return ({"valid": True, "claims": claims} if not reasons
             else {"valid": False, "reasons": reasons, "claims": claims})
+
+
+def verify_eddsa(token: str, public: bytes, audience: Optional[str] = None,
+                 now: Optional[float] = None) -> Dict[str, Any]:
+    """Verify an EdDSA token using only the public key."""
+    now = time.time() if now is None else now
+    parts = _split(token)
+    if parts is None:
+        return {"valid": False, "reasons": ["malformed token"]}
+    h, p, header, claims, sig = parts
+
+    # Refuse the symmetric path here: accepting HS256 would let a consumer's public key be
+    # abused as an HMAC secret (the classic key-confusion attack).
+    if header.get("alg") != "EdDSA":
+        return {"valid": False, "reasons": [f"algorithm refused: {header.get('alg')!r}"]}
+
+    if not ed25519.verify(public, f"{h}.{p}".encode(), sig):
+        return {"valid": False, "reasons": ["signature mismatch"]}
+
+    reasons = _check_claims(claims, now, audience)
+    return ({"valid": True, "claims": claims} if not reasons
+            else {"valid": False, "reasons": reasons, "claims": claims})
+
+
+def verify_any(token: str, *, secret: Optional[bytes] = None,
+               public: Optional[bytes] = None, audience: Optional[str] = None,
+               now: Optional[float] = None) -> Dict[str, Any]:
+    """Dispatch on the token's own algorithm, refusing anything else."""
+    parts = _split(token)
+    if parts is None:
+        return {"valid": False, "reasons": ["malformed token"]}
+    alg = parts[2].get("alg")
+    if alg == "EdDSA" and public is not None:
+        return verify_eddsa(token, public, audience, now)
+    if alg == "HS256" and secret is not None:
+        return verify(token, secret, audience, now)
+    return {"valid": False, "reasons": [f"algorithm refused: {alg!r}"]}

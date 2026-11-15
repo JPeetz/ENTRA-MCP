@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 
 from .gateway import serve_in_thread
 from .state import ContinuityState
-from .tokens import verify
+from .tokens import mint_eddsa, verify_any
 from .beacon import build_beacon
 from .health import HealthMonitor
 
@@ -144,20 +144,20 @@ def extra_call(name: str, args: Dict[str, Any]) -> Optional[Dict[str, Any]]:
                        session=session.id, requested=str(requested_aud))
             raise PermissionError("audience_not_approved")
 
-        from .tokens import mint
-        tok = mint(subject=session.subject,
-                   audience=session.audience,
-                   approved_scopes=session.approved_scopes,
-                   requested_scopes=args.get("scopes"),
-                   key=STATE.key, ttl=int(args.get("ttl", 900)),
-                   extra={"session": session.id},
-                   device_thumbprint=session.device_hash[:32])
+        tok = mint_eddsa(subject=session.subject,
+                         audience=session.audience,
+                         approved_scopes=session.approved_scopes,
+                         requested_scopes=args.get("scopes"),
+                         secret=STATE.signing_secret, ttl=int(args.get("ttl", 900)),
+                         extra={"session": session.id},
+                         device_thumbprint=session.device_hash[:32])
         STATE._log("token_issued", session=session.id, subject=session.subject,
                    scope=tok["scope"], ttl=tok["expires_in"])
         return tok
 
     if name == "verify_local_token":
-        return verify(args["token"], STATE.key, audience=args.get("aud"))
+        return verify_any(args["token"], secret=STATE.key,
+                          public=STATE.signing_public, audience=args.get("aud"))
 
     if name == "get_fallback_endpoint":
         port = _GATEWAY["port"] or 8400

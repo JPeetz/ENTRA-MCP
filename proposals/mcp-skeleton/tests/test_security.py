@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from continuity import downstream                                    # noqa: E402
 from continuity.hardening import AuditChain, RateLimiter             # noqa: E402
 from continuity.state import ContinuityState                         # noqa: E402
-from continuity.tokens import mint, verify                           # noqa: E402
+from continuity.tokens import mint, verify, verify_any                # noqa: E402
 
 PORT = 8421
 
@@ -155,7 +155,9 @@ class TestAttacks(unittest.TestCase):
     def test_token_bound_to_device(self):
         tok = downstream.extra_call("issue_local_token", {
             "session_id": self.sid, "device_key": "dev-key-1"})
-        claims = verify(tok["access_token"], downstream.STATE.key)["claims"]
+        claims = verify_any(tok["access_token"],
+                           public=downstream.STATE.signing_public,
+                           secret=downstream.STATE.key)["claims"]
         self.assertIn("cnf", claims)
         self.assertIn("jkt", claims["cnf"])
 

@@ -19,12 +19,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, Optional, Tuple
 from urllib.parse import urlparse
 
-from .tokens import MAX_TTL_SECONDS, mint, verify
+from .tokens import MAX_TTL_SECONDS, mint_eddsa, verify_any
 from .state import ContinuityState
 from .hardening import MAX_BODY, RateLimiter
 from .beacon import build_beacon, verify_beacon
 from .admin import AdminBootstrapError, KeyStore, verify_admin_claims
 from .crypto import verify_rs256
+from .ed25519 import jwk_from_public
 
 RATE = RateLimiter()
 KEYSTORE = KeyStore()
@@ -83,12 +84,9 @@ def build_handler(state: ContinuityState, host_header: str = "127.0.0.1:8400"):
                 return
 
             if path == "/jwks.json":
-                self._send(200, {
-                    "keys": [],
-                    "note": ("HS256 pre-shared key model: consumers receive the key at "
-                             "enrolment. Production replaces this with asymmetric keys "
-                             "and publishes the public half here."),
-                })
+                # The public half of the signing key. Consumers verify with this and never
+                # hold minting authority. Verification does not imply the ability to mint.
+                self._send(200, {"keys": [jwk_from_public(state.signing_public)]})
                 return
 
             # The beacon is served in EVERY mode, including healthy. It is read-only and
@@ -261,13 +259,13 @@ def build_handler(state: ContinuityState, host_header: str = "127.0.0.1:8400"):
                 return
 
             try:
-                tok = mint(subject=session.subject,
-                           audience=session.audience,
-                           approved_scopes=session.approved_scopes,
-                           requested_scopes=body.get("scopes"),
-                           key=state.key, ttl=ttl,
-                           extra={"session": sid},
-                           device_thumbprint=session.device_hash[:32])
+                tok = mint_eddsa(subject=session.subject,
+                                 audience=session.audience,
+                                 approved_scopes=session.approved_scopes,
+                                 requested_scopes=body.get("scopes"),
+                                 secret=state.signing_secret, ttl=ttl,
+                                 extra={"session": sid},
+                                 device_thumbprint=session.device_hash[:32])
             except ValueError as e:
                 state._log("token_denied", reason=str(e), session=sid)
                 self._send(403, {"error": "refused", "detail": str(e)})

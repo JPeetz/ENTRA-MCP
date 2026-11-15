@@ -71,7 +71,7 @@ published a postmortem at time of writing**, so these figures are indicative, no
 
 A dependency-free stdio MCP server implementing the tool contract, plus a loopback issuer
 (`/health`, OIDC discovery, `/token`, `/reconcile`) so downstream services repoint by
-configuration. 94 tests, most of them adversarial: audience override, scope escalation,
+configuration. 112 tests, most of them adversarial: audience override, scope escalation,
 device-key brute force, `alg:none` forgery, expired/revoked sessions, audit tampering,
 oversized bodies — all refused.
 

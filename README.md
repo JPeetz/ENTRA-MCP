@@ -7,7 +7,7 @@ Two artefacts, one argument:
 
 1. **A proposal** to Microsoft (`docs/proposals/entra-continuation-pr.md`) asking for a
    supported continuation API and first-party MCP servers.
-2. **A working implementation** of that surface (`proposals/mcp-skeleton/`), 94 tests
+2. **A working implementation** of that surface (`proposals/mcp-skeleton/`), 112 tests
    passing, no dependencies, no tenant contact.
 
 > **New here? Start with [`docs/GUIDE.md`](docs/GUIDE.md).** It explains the whole project
@@ -43,7 +43,7 @@ Plus `Entra.Continuity.Mcp` and `Entra.Policy.Mcp` in `microsoft/mcp`.
 
 ```bash
 cd proposals/mcp-skeleton
-python3 -m unittest discover -s tests -v     # 94 tests, adversarial by default
+python3 -m unittest discover -s tests -v     # 112 tests, adversarial by default
 python3 -m continuity.server                 # MCP over stdio
 ```
 
@@ -72,8 +72,8 @@ The design rule that makes it a fallback rather than a bypass:
 > outside a declared incident, cannot issue a privileged claim, cannot mint for longer than
 > an hour, and cannot hide what it did.
 
-Security model, including six **residual risks** (shared-secret token signing, no mTLS,
-in-process key custody, no hardware attestation, clock skew, no policy compiler):
+Security model, including five **residual risks** (no mTLS, in-process key custody,
+no hardware attestation, clock skew, no policy compiler):
 [`proposals/mcp-skeleton/SECURITY.md`](proposals/mcp-skeleton/SECURITY.md).
 
 ## Security posture
@@ -91,11 +91,12 @@ the real one. Everything below is enforced in code and has a test that attacks i
 | **HMAC'd audit chain** | Write access is not enough to forge a history — the key is needed too |
 | **Bounded handler pool (32)** | Connection floods are refused, not absorbed until OOM |
 | **Tenant-bound, hashed, revocable API keys** | Downstream credentials are narrower than the admin token and can be withdrawn |
+| **EdDSA token signing by default** | Consumers verify with a public key, so verifying does not grant the ability to mint |
 | **Loopback-only binding** | Never internet-facing; loopback + same-user is the trust boundary |
 
-**Still not done, and stated rather than hidden:** continuity tokens are signed HS256 (a
-shared key), there is no mTLS between downstream and gateway, and the signing key is held in
-process rather than an HSM. See [`SECURITY.md`](proposals/mcp-skeleton/SECURITY.md).
+**Still not done, and stated rather than hidden:** there is no mTLS between downstream and
+gateway, and the signing key is held in process rather than an HSM. HS256 remains available
+for devices that cannot do Ed25519 — explicitly, never silently. See [`SECURITY.md`](proposals/mcp-skeleton/SECURITY.md).
 
 ## Repository map
 
@@ -106,7 +107,7 @@ process rather than an HSM. See [`SECURITY.md`](proposals/mcp-skeleton/SECURITY.
 | `docs/traps.md` | Verified divergences from the specs, evidence-backed |
 | `docs/claims/README.md` | Claim reference — standard vs Entra vs to-verify |
 | `evidence/` | Captured public discovery documents, with fetch timestamps |
-| `proposals/mcp-skeleton/` | Runnable implementation + 94 tests + SECURITY.md |
+| `proposals/mcp-skeleton/` | Runnable implementation + 112 tests + SECURITY.md |
 | `SCOPE.md` | Four phases, effort, and the legal boundary |
 
 ## Rules this repo holds itself to
@@ -129,4 +130,4 @@ managed Windows Server AD in the cloud.
 - Repo: **published** — https://github.com/JPeetz/ENTRA-MCP
 - Microsoft outreach: **submitted** — https://github.com/microsoft/mcp/issues/4182
   (`microsoft/mcp` has Discussions disabled, so this went in as an issue)
-- Implementation: **working**, stdlib-only, 94 tests green
+- Implementation: **working**, stdlib-only, 112 tests green

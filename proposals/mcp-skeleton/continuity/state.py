@@ -42,6 +42,10 @@ class Session:
 
 
 class ContinuityState:
+    # Annotated at class level so static checkers see them; assigned in __init__.
+    signing_secret: bytes
+    signing_public: bytes
+
     def __init__(self, key: Optional[bytes] = None, salt: Optional[bytes] = None):
         self.master: bytes = key or os.urandom(32)
 
@@ -50,6 +54,12 @@ class ContinuityState:
         self.key: bytes = derive(self.master, "token-signing")
         self.beacon_key: bytes = derive(self.master, "beacon")
         self.audit_key: bytes = derive(self.master, "audit")
+
+        # Asymmetric token signing. Consumers verify with the public half published at
+        # /jwks.json, so verification never implies the ability to mint.
+        from . import ed25519
+        self.signing_secret: bytes = derive(self.master, "token-signing-ed25519")
+        self.signing_public: bytes = ed25519.public_key(self.signing_secret)
 
         self.salt: bytes = salt or os.urandom(32)    # device-key hashing salt
         self.sessions: Dict[str, Session] = {}

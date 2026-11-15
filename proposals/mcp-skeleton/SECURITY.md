@@ -56,8 +56,12 @@ No network egress. No tenant contact. The gateway never holds a Microsoft creden
 | T27 | Key confusion across surfaces | A leaked beacon key or audit key used against tokens | HKDF key separation: token / beacon / audit keys are independent | `test_beacon_key_cannot_verify_tokens` |
 | T28 | Audit forgery with write access | Rewrite the ledger and rehash it | Chain is HMAC'd, not merely hashed; a foreign key cannot forge history | `test_foreign_key_cannot_forge_history` |
 | T29 | Connection-flood OOM | Unbounded threads in `http.server` | Bounded handler pool (32); saturation is refused, not queued | see `BoundedHTTPServer` |
+| T30 | **Token key sharing** | Every verifier could also mint (HS256) | Ed25519 by default: consumers get the public key only | `test_public_key_cannot_forge` |
+| T31 | EdDSA/HS256 key confusion | Use the published public key as an HMAC secret | Each verifier refuses the other algorithm outright | `test_hs256_token_refused_by_asymmetric_verifier`, `test_eddsa_token_refused_by_hmac_verifier` |
+| T32 | Private key disclosure via JWKS | Publishing too much in `/jwks.json` | OKP public point only; no `d`, no secret | `test_jwks_does_not_leak_the_secret` |
+| T33 | Broken curve arithmetic | A subtly wrong implementation that still "works" | Validated against RFC 8032 §7.1 vectors byte-for-byte | `TestRFC8032Vectors` |
 
-**94 tests total.** The `test_security`, `test_beacon` and `test_admin` suites are
+**112 tests total.** The `test_security`, `test_beacon` and `test_admin` suites are
 adversarial by construction: each case performs an attack and asserts it is refused. If a
 guard regresses, a test goes red.
 
@@ -97,7 +101,7 @@ for real traffic, but the OOM path is closed.)*
 
 | Risk | Why it matters | Production answer |
 |---|---|---|
-| **HS256 token signing** | Every consumer holding the key can mint. A single leak is total. (Admin tokens are now RS256-verified; *continuity* tokens are still HS256.) | Asymmetric signing (ES256/RS256) for continuity tokens too; publish the public half at `/jwks.json`; per-consumer keys |
+| ~~HS256 token signing~~ **now EdDSA by default** | — | Continuity tokens are Ed25519-signed; consumers verify with the public key at `/jwks.json` and never hold minting authority. HS256 remains available for constrained devices and is explicit, never silent |
 | **No mTLS on the gateway** | Any local process that learns a session id + device key can mint | mTLS or workload identity between downstream and gateway |
 | **Single-process key custody** | Gateway compromise = mint authority | HSM/KMS-held key, non-exportable, PAM-gated start |
 | **No HSM-backed device attestation** | Device key is a shared secret, not a hardware assertion | WebAuthn/TPM attestation with a real key pair |
