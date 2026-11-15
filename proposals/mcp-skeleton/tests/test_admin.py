@@ -13,6 +13,7 @@ import time
 import unittest
 import urllib.error
 import urllib.request
+import uuid
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -35,7 +36,7 @@ def make_jwt(claims):
 
 def admin_claims(**over):
     base = {"tid": "11111111-2222-3333-4444-555555555555", "oid": "admin-oid-1",
-            "exp": int(time.time()) + 3600, "wids": [GLOBAL_ADMIN], "roles": []}
+            "exp": int(time.time()) + 3600, "wids": [GLOBAL_ADMIN], "roles": [], "jti": uuid.uuid4().hex}
     base.update(over)
     return base
 
@@ -140,6 +141,8 @@ class TestBootstrapOverHttp(unittest.TestCase):
         downstream.STATE = ContinuityState()
         downstream._GATEWAY["server"] = None
         downstream._GATEWAY["port"] = None
+        # Signature checks are off only because these tests use synthetic tokens.
+        downstream.STATE.allow_unverified_admin = True
         downstream.extra_call("serve_gateway", {"port": PORT})
         self.s = downstream.extra_call("enrol_session", {
             "subject": "monk@ordo", "audience": "api://ordo",
@@ -208,6 +211,50 @@ class TestBootstrapOverHttp(unittest.TestCase):
         self.assertTrue(boot)
         blob = json.dumps(events)
         self.assertNotIn("ok_", blob, "the API key must never reach the audit ledger")
+
+
+class TestSignatureEnforcement(unittest.TestCase):
+    """The gateway must never bootstrap on an unverified token."""
+
+    def setUp(self):
+        srv = downstream._GATEWAY.get("server")
+        if srv is not None:
+            try:
+                srv.shutdown(); srv.server_close()
+            except Exception:
+                pass
+        downstream.STATE = ContinuityState()
+        downstream._GATEWAY["server"] = None
+        downstream._GATEWAY["port"] = None
+        downstream.extra_call("serve_gateway", {"port": PORT})
+
+    def test_no_jwks_fails_closed(self):
+        """Default posture: no Microsoft key set loaded, so no key is issued."""
+        tok = make_jwt(admin_claims())
+        code, body = post_status("/admin/bootstrap", headers={"Authorization": f"Bearer {tok}"})
+        self.assertEqual(code, 403)
+        self.assertEqual(body["error"], "admin_signature_unverifiable")
+
+    def test_tampered_admin_token_refused(self):
+        fixtures = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
+        with open(os.path.join(fixtures, "jwks.json")) as fh:
+            downstream.STATE.jwks = json.load(fh)
+        with open(os.path.join(fixtures, "tokens.json")) as fh:
+            toks = json.load(fh)
+        code, body = post_status("/admin/bootstrap",
+                                 headers={"Authorization": f"Bearer {toks['tampered']}"})
+        self.assertEqual(code, 403)
+        self.assertEqual(body["error"], "admin_signature_invalid")
+        self.assertEqual(body["detail"], ["signature mismatch"])
+
+    def test_replayed_admin_token_refused(self):
+        downstream.STATE.allow_unverified_admin = True
+        tok = make_jwt(admin_claims())
+        code1, _ = post_status("/admin/bootstrap", headers={"Authorization": f"Bearer {tok}"})
+        self.assertEqual(code1, 200)
+        code2, body = post_status("/admin/bootstrap", headers={"Authorization": f"Bearer {tok}"})
+        self.assertEqual(code2, 403)
+        self.assertEqual(body["error"], "admin_token_replayed")
 
 
 if __name__ == "__main__":

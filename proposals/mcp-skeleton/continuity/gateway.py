@@ -24,6 +24,7 @@ from .state import ContinuityState
 from .hardening import MAX_BODY, RateLimiter
 from .beacon import build_beacon, verify_beacon
 from .admin import AdminBootstrapError, KeyStore, verify_admin_claims
+from .crypto import verify_rs256
 
 RATE = RateLimiter()
 KEYSTORE = KeyStore()
@@ -141,6 +142,35 @@ def build_handler(state: ContinuityState, host_header: str = "127.0.0.1:8400"):
                 self._send(401, {"error": "admin_token_unreadable"})
                 return
 
+            # Signature verification comes FIRST. Until Microsoft's signature is checked,
+            # a token is only a claim about itself.
+            token = auth[7:].strip()
+            jwks = getattr(state, "jwks", None)
+            if jwks:
+                check = verify_rs256(token, jwks,
+                                     expected_issuer=claims.get("iss"),
+                                     expected_tenant=getattr(state, "tenant_id", None))
+                if not check.get("valid"):
+                    state._log("bootstrap_denied", reason="signature",
+                               detail=str(check.get("reasons")))
+                    self._send(403, {"error": "admin_signature_invalid",
+                                     "detail": check.get("reasons")})
+                    return
+                claims = check["claims"]
+            elif not getattr(state, "allow_unverified_admin", False):
+                # Fail closed. An unverified admin token is an unauthenticated caller.
+                state._log("bootstrap_denied", reason="no_jwks")
+                self._send(403, {"error": "admin_signature_unverifiable",
+                                 "detail": "load the tenant JWKS (state.jwks), or set "
+                                           "allow_unverified_admin=true for local testing only"})
+                return
+
+            # A captured admin token must work exactly once.
+            if not state.replay.check_and_record(claims.get("jti")):
+                state._log("bootstrap_denied", reason="replay", jti=str(claims.get("jti")))
+                self._send(403, {"error": "admin_token_replayed"})
+                return
+
             bound = getattr(state, "tenant_id", None)
             try:
                 who = verify_admin_claims(claims, expected_tenant=bound)
@@ -250,8 +280,47 @@ def build_handler(state: ContinuityState, host_header: str = "127.0.0.1:8400"):
     return Handler
 
 
+class BoundedHTTPServer(ThreadingHTTPServer):
+    """ThreadingHTTPServer with a hard cap on concurrent handlers.
+
+    `http.server` spawns a thread per connection with no ceiling, so a slow-loris or a
+    connection flood grows memory until the process dies. The cap makes saturation a
+    refusal (503) instead of an OOM.
+    """
+
+    daemon_threads = True
+    allow_reuse_address = True
+    MAX_WORKERS = 32
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        import threading
+        super().__init__(*args, **kwargs)
+        self._slots = threading.BoundedSemaphore(self.MAX_WORKERS)
+
+    def process_request(self, request: Any, client_address: Any) -> None:
+        if not self._slots.acquire(blocking=False):
+            try:
+                request.sendall(b"HTTP/1.1 503 Service Unavailable\r\n"
+                                b"Connection: close\r\nContent-Length: 0\r\n\r\n")
+                request.close()
+            except Exception:
+                pass
+            return
+        try:
+            super().process_request(request, client_address)
+        except Exception:
+            self._slots.release()
+            raise
+
+    def process_request_thread(self, request: Any, client_address: Any) -> None:
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._slots.release()
+
+
 def serve_in_thread(state: ContinuityState, port: int = 8400) -> ThreadingHTTPServer:
-    srv = ThreadingHTTPServer(("127.0.0.1", port), build_handler(state, f"127.0.0.1:{port}"))
+    srv = BoundedHTTPServer(("127.0.0.1", port), build_handler(state, f"127.0.0.1:{port}"))
     import threading
     t = threading.Thread(target=srv.serve_forever, daemon=True, name="continuity-gateway")
     t.start()

@@ -18,7 +18,7 @@ python3 -m continuity.server        # speaks MCP over stdin/stdout
 
 ```bash
 python3 -m unittest discover -s tests -v
-# 72 tests, all passing
+# 94 tests, all passing
 ```
 
 **New here? Read [`../../docs/GUIDE.md`](../../docs/GUIDE.md) first** — the same project

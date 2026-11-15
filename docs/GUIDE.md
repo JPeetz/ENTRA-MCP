@@ -149,12 +149,13 @@ Read these. They are the point of the project.
 
 Being honest is part of the project.
 
-- **The master key's signature is not checked yet.** The code checks what the token *says*
-  (which roles, which tenant, not expired) but not that Microsoft truly signed it. The hook
-  for that is there and empty on purpose. Before real use, it must be connected to
-  Microsoft's public keys and must refuse anything it cannot verify.
+- **The admin's signature is checked — but you must supply the keys.** The code verifies
+  Microsoft really signed the admin's token, using Microsoft's published public keys. If
+  those keys are not loaded, it **refuses to set up at all** rather than trusting what the
+  token says. That is on purpose: saying no is safer than guessing.
+- **Continuity badges still use a shared key.** Fine for a fallback, but it means a leaked
+  key could make badges. The next step is the same public/private trick used for the admin.
 - Everything is **synthetic**. No real company data is inside.
-- The shared-key signing model should become proper public/private keys.
 
 ## 10. If you only remember one sentence
 

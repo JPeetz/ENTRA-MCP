@@ -66,18 +66,23 @@ class RateLimiter:
 
 
 class AuditChain:
-    """Append-only ledger where each entry commits to the previous one.
+    """Append-only ledger where each entry is HMAC'd to the previous one.
 
-    Makes silent deletion or edit detectably break the chain — the difference between an
-    audit log and a log-shaped text file.
+    Keyed on purpose. A plain hash chain can be *recomputed* by anyone who can write to it
+    — edit an entry, rehash the rest, and the chain looks intact. Keying it means an
+    outsider cannot forge a consistent history even with full write access.
     """
 
     GENESIS = "0" * 64
 
-    def __init__(self) -> None:
+    def __init__(self, key: bytes = b"") -> None:
+        self.key = key or b""
         self._entries: List[Dict[str, Any]] = []
         self._prev = self.GENESIS
         self._lock = threading.Lock()
+
+    def _mac(self, prev: str, blob: bytes) -> str:
+        return hmac.new(self.key, prev.encode() + blob, hashlib.sha256).hexdigest()
 
     def append(self, event: str, **fields: Any) -> Dict[str, Any]:
         with self._lock:
@@ -88,7 +93,7 @@ class AuditChain:
                 **fields,
             }
             blob = repr(sorted(entry.items())).encode()
-            entry["hash"] = hashlib.sha256(self._prev.encode() + blob).hexdigest()
+            entry["hash"] = self._mac(self._prev, blob)
             self._prev = entry["hash"]
             self._entries.append(entry)
             return entry
@@ -102,9 +107,8 @@ class AuditChain:
         prev = self.GENESIS
         for e in entries:
             body = {k: v for k, v in e.items() if k != "hash"}
-            expected = hashlib.sha256(
-                prev.encode() + repr(sorted(body.items())).encode()).hexdigest()
-            if e.get("prev") != prev or e.get("hash") != expected:
+            expected = self._mac(prev, repr(sorted(body.items())).encode())
+            if e.get("prev") != prev or not hmac.compare_digest(str(e.get("hash")), expected):
                 return False
             prev = e["hash"]
         return True

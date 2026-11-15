@@ -49,17 +49,31 @@ No network egress. No tenant contact. The gateway never holds a Microsoft creden
 | T20 | Tenant hijack | A different tenant's admin rebinding the gateway | First bootstrap binds; later mismatches refused | `test_second_tenant_cannot_rebind` |
 | T21 | Key theft / leakage | Stolen API key used to mint | Hashed at rest, constant-time compare, revocable, never in audit log | `test_revoked_key_stops_minting`, `test_plaintext_key_is_not_stored` |
 | T22 | Unauthenticated minting | Calling `/token` without a key | 401 before any session lookup | `test_key_mints_and_keyless_caller_cannot` |
+| T23 | **Forged admin token** | Self-signed JWT claiming Global Administrator | RS256 signature verified against the tenant JWKS **before** any claim is read; unknown `kid` and bad signatures refused | `test_tampered_admin_token_refused`, `test_tampered_payload_refused` |
+| T24 | `alg:none` / HS256 confusion | Repackage a valid token with a weaker algorithm | Algorithm allowlist: only RS256 accepted, anything else refused outright | `test_alg_none_refused`, `test_hs256_confusion_refused` |
+| T25 | **Unverifiable bootstrap** | Running with no key set and trusting claims anyway | **Fails closed**: no JWKS => no API key, unless `allow_unverified_admin` is set explicitly | `test_no_jwks_fails_closed` |
+| T26 | Admin-token replay | Reuse a captured admin token within its lifetime | `jti` replay cache; second use refused | `test_replayed_admin_token_refused` |
+| T27 | Key confusion across surfaces | A leaked beacon key or audit key used against tokens | HKDF key separation: token / beacon / audit keys are independent | `test_beacon_key_cannot_verify_tokens` |
+| T28 | Audit forgery with write access | Rewrite the ledger and rehash it | Chain is HMAC'd, not merely hashed; a foreign key cannot forge history | `test_foreign_key_cannot_forge_history` |
+| T29 | Connection-flood OOM | Unbounded threads in `http.server` | Bounded handler pool (32); saturation is refused, not queued | see `BoundedHTTPServer` |
 
-**72 tests total.** The `test_security`, `test_beacon` and `test_admin` suites are
+**94 tests total.** The `test_security`, `test_beacon` and `test_admin` suites are
 adversarial by construction: each case performs an attack and asserts it is refused. If a
 guard regresses, a test goes red.
 
-**Unwired hook — stated plainly:** admin token **signature** verification is a hook
-(`verify_admin_claims(validator=...)`) and is *not* wired in this skeleton. Everything else
-about the token is checked (role, tenant, expiry, continuity marker), but until `validator`
-is bound to `https://login.microsoftonline.com/{tid}/discovery/v2.0/keys` the check proves
-what the token *claims*, not who issued it. Faking that would be worse than leaving it
-visible; in production it must be wired and fail closed.
+**Signature verification is now implemented, not promised.** `crypto.verify_rs256` performs
+RSASSA-PKCS1-v1_5 over SHA-256 with the tenant's published JWKS — pure integer arithmetic,
+no third-party library — and the gateway calls it **before reading a single claim**. Two
+states are worth knowing:
+
+- **JWKS loaded** (`state.jwks`): admin tokens are verified. Unknown `kid`, bad signature,
+  `alg:none`, `HS256`, expiry and tenant mismatch are all refused.
+- **No JWKS loaded**: bootstrap **fails closed**. It returns
+  `admin_signature_unverifiable` rather than trusting claims. `allow_unverified_admin` exists
+  for local testing and must never be set in a deployment.
+
+Test-key fixtures live in `tests/fixtures/` and were generated with `openssl`; they are
+test material, not credentials.
 
 ## Side-channel notes
 
@@ -79,9 +93,9 @@ visible; in production it must be wired and fail closed.
 
 | Risk | Why it matters | Production answer |
 |---|---|---|
-| **HS256 shared key** | Every consumer holding the key can mint. A single leak is total. | Asymmetric signing (ES256/RS256); publish the public half at `/jwks.json`; per-consumer keys |
+| **HS256 token signing** | Every consumer holding the key can mint. A single leak is total. (Admin tokens are now RS256-verified; *continuity* tokens are still HS256.) | Asymmetric signing (ES256/RS256) for continuity tokens too; publish the public half at `/jwks.json`; per-consumer keys |
 | **No mTLS on the gateway** | Any local process that learns a session id + device key can mint | mTLS or workload identity between downstream and gateway |
-| **http.server thread growth** | Connection flood exhausts threads | Front with nginx/envoy with `worker_connections` and rate limits |
+| ~~http.server thread growth~~ **now bounded** | — | `BoundedHTTPServer` caps concurrent handlers at 32 and refuses beyond that; still put a reverse proxy in front for real traffic |
 | **Single-process key custody** | Gateway compromise = mint authority | HSM/KMS-held key, non-exportable, PAM-gated start |
 | **No HSM-backed device attestation** | Device key is a shared secret, not a hardware assertion | WebAuthn/TPM attestation with a real key pair |
 | **Clock skew** | ±30 s tolerance on `nbf`; larger skew rejects valid tokens | Time sync + configurable skew, monitored |

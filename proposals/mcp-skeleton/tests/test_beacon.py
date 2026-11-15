@@ -52,16 +52,16 @@ class TestBeacon(unittest.TestCase):
 
     def test_beacon_signature_verifies(self):
         b = build_beacon(downstream.STATE)
-        self.assertTrue(verify_beacon(b, downstream.STATE.key)["valid"])
+        self.assertTrue(verify_beacon(b, downstream.STATE.beacon_key)["valid"])
 
     def test_tampered_beacon_rejected(self):
         b = build_beacon(downstream.STATE)
         b["authority"] = "local"          # attacker flips consumers onto the fallback
-        self.assertFalse(verify_beacon(b, downstream.STATE.key)["valid"])
+        self.assertFalse(verify_beacon(b, downstream.STATE.beacon_key)["valid"])
 
     def test_expired_beacon_rejected(self):
         b = build_beacon(downstream.STATE, ttl=1, now=time.time() - 100)
-        r = verify_beacon(b, downstream.STATE.key)
+        r = verify_beacon(b, downstream.STATE.beacon_key)
         self.assertFalse(r["valid"])
         self.assertTrue(any("expired" in x for x in r["reasons"]))
 
@@ -72,7 +72,7 @@ class TestBeacon(unittest.TestCase):
         self.assertEqual(d["authority"], "cloud")
         self.assertEqual(d["iss"], "continuity-local")
         # and it is usable: a consumer can verify it
-        self.assertTrue(verify_beacon(d, downstream.STATE.key)["valid"])
+        self.assertTrue(verify_beacon(d, downstream.STATE.beacon_key)["valid"])
 
     def test_beacon_reports_local_once_degraded(self):
         downstream.extra_call("serve_gateway", {"port": PORT})

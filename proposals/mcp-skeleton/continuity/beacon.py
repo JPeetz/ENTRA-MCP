@@ -64,7 +64,7 @@ def build_beacon(state: Any,
         "services": services or [],
         "tenant_placeholder": "{tenantid}",
     }
-    return {**payload, "sig": sign(payload, state.key)}
+    return {**payload, "sig": sign(payload, getattr(state, "beacon_key", state.key))}
 
 
 def verify_beacon(beacon: Dict[str, Any], key: bytes,

@@ -73,9 +73,9 @@ def verify_admin_claims(claims: Dict[str, Any],
                         validator: Optional[Callable[[Dict[str, Any]], bool]] = None) -> Dict[str, Any]:
     """Structural + role check on an Entra access token. Raises AdminBootstrapError.
 
-    NOTE: signature verification is the `validator` hook. Without it this function proves
-    only what the token *says*, not that Microsoft issued it — acceptable for a skeleton,
-    never for production.
+    This function assumes the token's **signature has already been verified** (see
+    `crypto.verify_rs256`, called by the gateway). It answers a different question: does
+    the (now trusted) token carry administrative rights for *this* tenant?
     """
     now = time.time() if now is None else now
     reasons: List[str] = []

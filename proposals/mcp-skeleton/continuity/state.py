@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from .hardening import AuditChain, hash_secret, safe_eq
+from .crypto import ReplayCache, derive
 
 DEFAULT_SESSION_TTL_SECONDS = 30 * 24 * 3600
 
@@ -42,10 +43,23 @@ class Session:
 
 class ContinuityState:
     def __init__(self, key: Optional[bytes] = None, salt: Optional[bytes] = None):
-        self.key: bytes = key or os.urandom(32)      # token signing key
+        self.master: bytes = key or os.urandom(32)
+
+        # Key separation over one master secret. A leaked beacon key cannot sign tokens;
+        # a leaked audit key cannot forge one; and device hashes use their own salt.
+        self.key: bytes = derive(self.master, "token-signing")
+        self.beacon_key: bytes = derive(self.master, "beacon")
+        self.audit_key: bytes = derive(self.master, "audit")
+
         self.salt: bytes = salt or os.urandom(32)    # device-key hashing salt
         self.sessions: Dict[str, Session] = {}
-        self.audit = AuditChain()
+        self.audit = AuditChain(key=self.audit_key)
+
+        # Admin bootstrap trust anchors. `jwks` is Microsoft's published key set; without
+        # it (and without an explicit insecure override) bootstrap is REFUSED.
+        self.jwks: Optional[Dict[str, Any]] = None
+        self.allow_unverified_admin: bool = False
+        self.replay = ReplayCache()
         self.mode: str = "healthy"                   # healthy | degraded | drill
         self.since: int = int(time.time())
         self.seq: int = 1
