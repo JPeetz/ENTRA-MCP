@@ -6,11 +6,12 @@ T1  device-key brute force        -> RateLimiter
 T2  timing oracle on comparison   -> safe_eq (constant time)
 T3  key disclosure at rest        -> hash_secret (per-state salt)
 T4  request-body memory DoS       -> MAX_BODY
-T5  audit-log tampering           -> AuditChain (hash chained)
+T5  audit-log tampering           -> AuditChain (HMAC'd chain, keyed)
 
-Not addressed here (see SECURITY.md residual risks): unbounded thread spawning in
-http.server, and the shared-secret signing model. Both need a reverse proxy / asymmetric
-keys in production rather than a helper function.
+Handled elsewhere, not here: unbounded thread spawning (gateway.BoundedHTTPServer, capped at
+32) and asymmetric admin-token verification (crypto.verify_rs256). The remaining
+shared-secret exposure is the *continuity token* signing key, which SECURITY.md lists as a
+residual risk.
 """
 
 import hashlib

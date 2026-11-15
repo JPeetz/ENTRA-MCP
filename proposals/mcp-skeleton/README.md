@@ -87,41 +87,7 @@ consecutive successes to recover. A single 502 never starts minting. A 401/404 c
 
 Automatic mode is **opt-in** (`set_auto_mode`), so nothing changes behaviour by surprise.
 
-### Bootstrap: tenant administrator → downstream API key
-
-The gateway is not self-authorising. It is bound by **an administrator of your original
-Entra tenant**, and that admin's own account is the only thing that can create it:
-
-```
-POST /admin/bootstrap     Authorization: Bearer <Entra access token of an admin account>
-  → 200 { "api_key": "ok_…", "key_id": …, "tenant_id": …, "scopes": ["continuity.read",
-          "continuity.mint"], "expires_at": …, "note": "shown once" }
-```
-
-What is checked before a key is issued:
-
-| Check | Refusal |
-|---|---|
-| Token carries an administrative directory role (`wids` / `roles`) | `admin_not_authorised` |
-| Token is not expired | `admin_not_authorised` |
-| Token is not one this gateway issued (`xms_continuity`) | `admin_not_authorised` |
-| Tenant matches the already-bound tenant | `admin_not_authorised` |
-| Signature valid (`validator=` hook → Microsoft JWKS) | `admin_not_authorised` |
-
-Accepted administrative roles: Global Administrator, Application Administrator, Cloud
-Application Administrator, Privileged Role Administrator.
-
-The **API key** is what downstream services use. It is deliberately narrower than the admin
-token that created it: it can read continuity state and mint continuity tokens, nothing
-else. It is stored only as a salted HMAC, compared in constant time, tenant-bound,
-revocable, and 90-day limited. The plaintext is returned exactly once and never written to
-the audit ledger.
-
-**The admin token can only do this one thing, once.** It cannot mint continuity tokens, and
-a continuity token can never be used to bootstrap — that direction is closed explicitly,
-because a fallback that can promote itself into its own authority is not a fallback.
-
-Guards that make this safe rather than a permanent bypass:
+### Guards on minting
 
 - **Minting is impossible in `healthy` mode.** The endpoint returns 503 until a mode
   change is declared, and the mode change is itself an audited event.
@@ -137,6 +103,41 @@ Guards that make this safe rather than a permanent bypass:
   policy on first contact after recovery.
 - **Loopback only.** This must never be internet-facing.
 
+### Bootstrap: tenant administrator → downstream API key
+
+The gateway is not self-authorising. It is bound by **an administrator of your original
+Entra tenant**, and that admin's own account is the only thing that can create it:
+
+```
+POST /admin/bootstrap     Authorization: Bearer <ADMIN_ACCESS_TOKEN>
+  → 200 { "api_key": "ok_…", "key_id": …, "tenant_id": …, "scopes": ["continuity.read",
+          "continuity.mint"], "expires_at": …, "note": "shown once" }
+```
+
+What is checked before a key is issued:
+
+| Check | Refusal |
+|---|---|
+| Token carries an administrative directory role (`wids` / `roles`) | `admin_not_authorised` |
+| Token is not expired | `admin_not_authorised` |
+| Token is not one this gateway issued (`xms_continuity`) | `admin_not_authorised` |
+| Tenant matches the already-bound tenant | `admin_not_authorised` |
+| **Signature verified (RS256 against the tenant JWKS)** | `admin_signature_invalid` |
+| A JWKS is loaded at all — otherwise it fails closed | `admin_signature_unverifiable` |
+| `jti` not seen before (replay) | `admin_token_replayed` |
+
+Accepted administrative roles: Global Administrator, Application Administrator, Cloud
+Application Administrator, Privileged Role Administrator.
+
+The **API key** is what downstream services use. It is deliberately narrower than the admin
+token that created it: it can read continuity state and mint continuity tokens, nothing
+else. It is stored only as a salted HMAC, compared in constant time, tenant-bound,
+revocable, and 90-day limited. The plaintext is returned exactly once and never written to
+the audit ledger.
+
+**The admin token can only do this one thing, once.** It cannot mint continuity tokens, and
+a continuity token can never be used to bootstrap — that direction is closed explicitly,
+because a fallback that can promote itself into its own authority is not a fallback.
 ## What is real and what is not
 
 **Real:** the evaluator. Exclusions beat inclusions, conditions AND within a dimension, a
@@ -144,9 +145,14 @@ Guards that make this safe rather than a permanent bypass:
 `reportOnly` policies never enforce, and unknown controls fail closed rather than open.
 Snapshot verification rejects tampered payloads, expired snapshots and stale sequences.
 
-**Synthetic:** the signature. It is a demo HMAC so the skeleton runs without Microsoft
-keys. The real API signs with a Microsoft key verified against published JWKS — the
-local HMAC is **not** a security control and the code says so where it matters.
+**Real:** admin-token signature verification. `crypto.verify_rs256` checks Microsoft's
+signature against the tenant JWKS before any claim is read, and the gateway refuses to
+bootstrap at all when no key set is loaded.
+
+**Still symmetric:** the *continuity tokens this gateway issues* are HMAC-signed with a
+shared key, because an air-gapped fallback cannot do a JWKS round-trip mid-outage. That is a
+documented residual risk, not a hidden one — and the admin credential that authorises the
+gateway is asymmetric, so the crown jewels never depend on it.
 
 **Not implemented:** any network call. This never contacts a tenant.
 

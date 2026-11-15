@@ -13,27 +13,6 @@ Two artefacts, one argument:
 > **New here? Start with [`docs/GUIDE.md`](docs/GUIDE.md).** It explains the whole project
 > in plain words — what breaks, what this does about it, and how to run it in five minutes.
 
-## Security posture
-
-The fallback is a second way to obtain credentials, so it must be **strictly narrower** than
-the real one. Everything below is enforced in code and has a test that attacks it.
-
-| Control | Why |
-|---|---|
-| **Admin tokens verified with RS256** against the tenant JWKS, before any claim is read | A token that says "I am Global Admin" is worthless unless Microsoft signed it |
-| **Fails closed without JWKS** | No trust anchor means no bootstrap, not "trust it anyway" |
-| **`alg` allowlist** | `none` and HS256-confusion are the classic JWT bypasses |
-| **`jti` replay cache** | A captured admin token works exactly once |
-| **HKDF key separation** | Token, beacon and audit keys are independent; one leak does not cascade |
-| **HMAC'd audit chain** | Write access is not enough to forge a history — the key is needed too |
-| **Bounded handler pool (32)** | Connection floods are refused, not absorbed until OOM |
-| **Tenant-bound, hashed, revocable API keys** | Downstream credentials are narrower than the admin token and can be withdrawn |
-| **Loopback-only binding** | Never internet-facing; loopback + same-user is the trust boundary |
-
-**Still not done, and stated rather than hidden:** continuity tokens are signed HS256 (a
-shared key), there is no mTLS between downstream and gateway, and the signing key is held in
-process rather than an HSM. See [`SECURITY.md`](proposals/mcp-skeleton/SECURITY.md).
-
 ## The problem
 
 On **12 November 2026** Entra sign-in and dependent applications degraded from roughly
@@ -93,8 +72,30 @@ The design rule that makes it a fallback rather than a bypass:
 > outside a declared incident, cannot issue a privileged claim, cannot mint for longer than
 > an hour, and cannot hide what it did.
 
-Security model, including seven **residual risks** (shared-secret signing, no mTLS,
-`http.server` thread growth): [`proposals/mcp-skeleton/SECURITY.md`](proposals/mcp-skeleton/SECURITY.md).
+Security model, including six **residual risks** (shared-secret token signing, no mTLS,
+in-process key custody, no hardware attestation, clock skew, no policy compiler):
+[`proposals/mcp-skeleton/SECURITY.md`](proposals/mcp-skeleton/SECURITY.md).
+
+## Security posture
+
+The fallback is a second way to obtain credentials, so it must be **strictly narrower** than
+the real one. Everything below is enforced in code and has a test that attacks it.
+
+| Control | Why |
+|---|---|
+| **Admin tokens verified with RS256** against the tenant JWKS, before any claim is read | A token that says "I am Global Admin" is worthless unless Microsoft signed it |
+| **Fails closed without JWKS** | No trust anchor means no bootstrap, not "trust it anyway" |
+| **`alg` allowlist** | `none` and HS256-confusion are the classic JWT bypasses |
+| **`jti` replay cache** | A captured admin token works exactly once |
+| **HKDF key separation** | Token, beacon and audit keys are independent; one leak does not cascade |
+| **HMAC'd audit chain** | Write access is not enough to forge a history — the key is needed too |
+| **Bounded handler pool (32)** | Connection floods are refused, not absorbed until OOM |
+| **Tenant-bound, hashed, revocable API keys** | Downstream credentials are narrower than the admin token and can be withdrawn |
+| **Loopback-only binding** | Never internet-facing; loopback + same-user is the trust boundary |
+
+**Still not done, and stated rather than hidden:** continuity tokens are signed HS256 (a
+shared key), there is no mTLS between downstream and gateway, and the signing key is held in
+process rather than an HSM. See [`SECURITY.md`](proposals/mcp-skeleton/SECURITY.md).
 
 ## Repository map
 

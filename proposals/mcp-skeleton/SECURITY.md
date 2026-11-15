@@ -91,11 +91,14 @@ test material, not credentials.
 
 ## Residual risks — stated plainly, not mitigated in the skeleton
 
+*(Formerly listed here: unbounded `http.server` threads — now bounded at 32 by
+`BoundedHTTPServer`, which refuses rather than queues. A reverse proxy is still advisable
+for real traffic, but the OOM path is closed.)*
+
 | Risk | Why it matters | Production answer |
 |---|---|---|
 | **HS256 token signing** | Every consumer holding the key can mint. A single leak is total. (Admin tokens are now RS256-verified; *continuity* tokens are still HS256.) | Asymmetric signing (ES256/RS256) for continuity tokens too; publish the public half at `/jwks.json`; per-consumer keys |
 | **No mTLS on the gateway** | Any local process that learns a session id + device key can mint | mTLS or workload identity between downstream and gateway |
-| ~~http.server thread growth~~ **now bounded** | — | `BoundedHTTPServer` caps concurrent handlers at 32 and refuses beyond that; still put a reverse proxy in front for real traffic |
 | **Single-process key custody** | Gateway compromise = mint authority | HSM/KMS-held key, non-exportable, PAM-gated start |
 | **No HSM-backed device attestation** | Device key is a shared secret, not a hardware assertion | WebAuthn/TPM attestation with a real key pair |
 | **Clock skew** | ±30 s tolerance on `nbf`; larger skew rejects valid tokens | Time sync + configurable skew, monitored |
