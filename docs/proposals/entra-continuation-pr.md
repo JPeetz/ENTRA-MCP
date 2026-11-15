@@ -81,6 +81,7 @@ services repoint with a configuration change, not a code change:
 | Local endpoint | Purpose |
 |---|---|
 | `GET /health` | mode + readiness, so orchestrators can route |
+| `GET /.well-known/continuity-beacon.json` | **always-on signed beacon** — tells every service whether to use the cloud or this issuer |
 | `GET /.well-known/openid-configuration` | lets clients discover the fallback issuer natively |
 | `POST /token` | short-lived continuity token for a **pre-enrolled** session |
 | `POST /reconcile` | drain the local audit ledger on recovery |

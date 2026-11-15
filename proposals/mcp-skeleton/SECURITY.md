@@ -41,8 +41,14 @@ No network egress. No tenant contact. The gateway never holds a Microsoft creden
 | T12 | Memory-exhaustion DoS | 40 KB+ body to `/token` | `MAX_BODY` refused before read → 413 | `test_body_too_large_refused` |
 | T13 | Session enumeration | Probe ids to learn which exist | Rate limit precedes lookup | covered by T1 test path |
 | T14 | Healthy-mode bypass | Mint while the tenant is fine | 503 unless degraded/drill | `test_gateway_http_flow` (503 assertion) |
+| T15 | Beacon spoofing | Rogue LAN service advertises itself as the fallback | Beacon is HMAC-signed; consumers verify before acting | `test_tampered_beacon_rejected` |
+| T16 | Beacon replay / staleness | Old beacon replayed after recovery | 60 s TTL; expired beacon is treated as unreachable | `test_expired_beacon_rejected` |
+| T17 | Oscillation attack | Flap the probe to force mode churn and mint inside windows | Hysteresis both edges (3 fails / 2 successes) | `test_flapping_does_not_degrade` |
+| T18 | Silent behaviour change | Auto-detection switching modes unasked | Opt-in only; every transition audited | `test_disabled_by_default`, `test_transition_is_audited` |
 
-**38 tests total; 14 are adversarial.** If a guard regresses, a test goes red.
+**52 tests total.** The `test_security` and `test_beacon` suites are adversarial by
+construction: each case performs an attack and asserts it is refused. If a guard
+regresses, a test goes red.
 
 ## Side-channel notes
 

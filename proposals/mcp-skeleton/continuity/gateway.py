@@ -21,6 +21,7 @@ from urllib.parse import urlparse
 from .tokens import MAX_TTL_SECONDS, mint, verify
 from .state import ContinuityState
 from .hardening import MAX_BODY, RateLimiter
+from .beacon import build_beacon, verify_beacon
 
 RATE = RateLimiter()
 
@@ -67,6 +68,12 @@ def build_handler(state: ContinuityState, host_header: str = "127.0.0.1:8400"):
                              "enrolment. Production replaces this with asymmetric keys "
                              "and publishes the public half here."),
                 })
+                return
+
+            # The beacon is served in EVERY mode, including healthy. It is read-only and
+            # signed, and it is how a downstream service discovers the fallback at all.
+            if path == "/.well-known/continuity-beacon.json":
+                self._send(200, build_beacon(state, base_url=base))
                 return
 
             self._send(404, {"error": "not_found", "path": path})

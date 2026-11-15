@@ -49,10 +49,36 @@ MCP directly; they point their issuer at it:
 
 ```
 GET  /health                             -> mode + readiness
-GET  /.well-known/openid-configuration   -> local issuer metadata
+GET  /.well-known/continuity-beacon.json  -> SIGNED beacon, served in every mode
+GET  /.well-known/openid-configuration    -> local issuer metadata
 POST /token                              -> short-lived continuity token
-POST /reconcile                          -> drain the audit ledger
+POST /reconcile                          -> drain the tamper-evident ledger
 ```
+
+### The beacon — always on, for every service
+
+The gateway is **always available**. In every mode, including healthy, it serves a signed
+beacon that answers the only question a downstream service needs:
+
+| `authority` | Meaning |
+|---|---|
+| `cloud` | Keep using Microsoft. The local issuer will not mint. |
+| `local` | Microsoft is unreachable — point at this issuer now. |
+| `drill` | Rehearsal; minting enabled but flagged non-production. |
+
+The beacon is signed, so a consumer can trust what it discovered (well-known endpoints and
+mDNS are otherwise spoofable by anything on the segment), and it expires in 60 seconds — a
+stale beacon is treated as unreachable rather than acted on.
+
+### Detection is automatic, not a button
+
+The worst moment to ask a human to declare an incident is during one. `HealthMonitor`
+probes the identity plane on three independent signals — DNS, TLS, HTTP — and flips the
+mode itself, with **hysteresis on both edges**: three consecutive failures to degrade, two
+consecutive successes to recover. A single 502 never starts minting. A 401/404 counts as
+*up*, because the service is answering.
+
+Automatic mode is **opt-in** (`set_auto_mode`), so nothing changes behaviour by surprise.
 
 Guards that make this safe rather than a permanent bypass:
 

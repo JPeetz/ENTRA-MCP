@@ -13,9 +13,20 @@ from typing import Any, Dict, List, Optional
 from .gateway import serve_in_thread
 from .state import ContinuityState
 from .tokens import verify
+from .beacon import build_beacon
+from .health import HealthMonitor
 
 STATE = ContinuityState()
 _GATEWAY: Dict[str, Any] = {"server": None, "port": None}
+_MON: Dict[str, Any] = {"monitor": None, "state_id": None}
+
+
+def _monitor() -> HealthMonitor:
+    """A monitor bound to the current STATE (tests replace STATE between cases)."""
+    if _MON["state_id"] != id(STATE):
+        _MON["monitor"] = HealthMonitor(STATE)
+        _MON["state_id"] = id(STATE)
+    return _MON["monitor"]
 
 
 def _require_minting() -> None:
@@ -64,6 +75,20 @@ EXTRA_TOOLS: List[Dict[str, Any]] = [
     {"name": "reconcile_delta",
      "description": "Drain the local audit ledger for replay once the tenant recovers.",
      "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "get_beacon",
+     "description": "Signed continuity beacon, served in every mode. Tells a downstream "
+                    "service whether to use the cloud (authority=cloud) or this issuer "
+                    "(authority=local), plus every endpoint it needs.",
+     "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "probe_idp",
+     "description": "Check the identity plane now (DNS, TLS, HTTP separately) and, if "
+                    "automatic mode is on, transition the mode with hysteresis.",
+     "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "set_auto_mode",
+     "description": "Enable or disable automatic outage detection. When on, the monitor "
+                    "degrades after 3 consecutive failures and recovers after 2 successes.",
+     "inputSchema": {"type": "object", "properties": {
+         "enabled": {"type": "boolean"}}, "required": ["enabled"]}},
 ]
 
 
@@ -136,5 +161,15 @@ def extra_call(name: str, args: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
     if name == "reconcile_delta":
         return {"reconciled": STATE.drain_audit(), "seq": STATE.seq}
+
+    if name == "get_beacon":
+        port = _GATEWAY["port"] or 8400
+        return build_beacon(STATE, base_url=f"http://127.0.0.1:{port}")
+
+    if name == "probe_idp":
+        return _monitor().tick()
+
+    if name == "set_auto_mode":
+        return _monitor().set_automatic(bool(args["enabled"]))
 
     return None
