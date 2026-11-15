@@ -101,6 +101,7 @@ managed Windows Server AD in the cloud.
 
 ## Status
 
-- Proposal: **drafted, not submitted.**
-- Implementation: **working**, stdlib-only, 38 tests green.
-- Published: **no** — see [`SUBMITTING.md`](SUBMITTING.md) for what remains.
+- Repo: **published** — https://github.com/JPeetz/ENTRA-MCP
+- Microsoft outreach: **submitted** — https://github.com/microsoft/mcp/issues/4182
+  (`microsoft/mcp` has Discussions disabled, so this went in as an issue)
+- Implementation: **working**, stdlib-only, 38 tests green
