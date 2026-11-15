@@ -2,7 +2,7 @@
 
 ## Current State
 
-Last commit: `2538dfa` · `make check`: passing (112 tests) · CI: green on 3.9 + 3.12
+Last commit: `45208c9` (harness install) · `make check`: passing (112 tests) · CI: green on 3.9 + 3.12
 
 The repo is a working reference implementation plus a proposal. Nothing is mid-edit; the tree
 is consistent.
@@ -34,7 +34,7 @@ vector tests, plus CI enforcement of the doc/code consistency.
 
 ## Session log
 
-- `2538dfa` — harness install (PROGRESS/DECISIONS/feature_list/Makefile/scripts/arch rules).
+- `45208c9` — harness install (PROGRESS/DECISIONS/feature_list/Makefile/scripts/arch rules).
 - `33a2f5d` — Ed25519 default, JWKS publication, CI (tests + secret scan + claim check); fixed
   a 3.9 runner provisioning failure by pinning ubuntu-22.04.
 - `53a1040` — RS256 admin-token verification, HKDF key separation, HMAC'd audit chain,
