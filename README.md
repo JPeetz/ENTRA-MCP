@@ -7,8 +7,11 @@ Two artefacts, one argument:
 
 1. **A proposal** to Microsoft (`docs/proposals/entra-continuation-pr.md`) asking for a
    supported continuation API and first-party MCP servers.
-2. **A working implementation** of that surface (`proposals/mcp-skeleton/`), 38 tests
+2. **A working implementation** of that surface (`proposals/mcp-skeleton/`), 72 tests
    passing, no dependencies, no tenant contact.
+
+> **New here? Start with [`docs/GUIDE.md`](docs/GUIDE.md).** It explains the whole project
+> in plain words — what breaks, what this does about it, and how to run it in five minutes.
 
 ## The problem
 
@@ -40,7 +43,7 @@ Plus `Entra.Continuity.Mcp` and `Entra.Policy.Mcp` in `microsoft/mcp`.
 
 ```bash
 cd proposals/mcp-skeleton
-python3 -m unittest discover -s tests -v     # 38 tests, 14 adversarial
+python3 -m unittest discover -s tests -v     # 72 tests, adversarial by default
 python3 -m continuity.server                 # MCP over stdio
 ```
 
@@ -81,7 +84,7 @@ Security model, including seven **residual risks** (shared-secret signing, no mT
 | `docs/traps.md` | Verified divergences from the specs, evidence-backed |
 | `docs/claims/README.md` | Claim reference — standard vs Entra vs to-verify |
 | `evidence/` | Captured public discovery documents, with fetch timestamps |
-| `proposals/mcp-skeleton/` | Runnable implementation + 38 tests + SECURITY.md |
+| `proposals/mcp-skeleton/` | Runnable implementation + 72 tests + SECURITY.md |
 | `SCOPE.md` | Four phases, effort, and the legal boundary |
 
 ## Rules this repo holds itself to
@@ -104,4 +107,4 @@ managed Windows Server AD in the cloud.
 - Repo: **published** — https://github.com/JPeetz/ENTRA-MCP
 - Microsoft outreach: **submitted** — https://github.com/microsoft/mcp/issues/4182
   (`microsoft/mcp` has Discussions disabled, so this went in as an issue)
-- Implementation: **working**, stdlib-only, 38 tests green
+- Implementation: **working**, stdlib-only, 72 tests green

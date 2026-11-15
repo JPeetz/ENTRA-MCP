@@ -18,13 +18,16 @@ python3 -m continuity.server        # speaks MCP over stdin/stdout
 
 ```bash
 python3 -m unittest discover -s tests -v
-# 16 tests, all passing
+# 72 tests, all passing
 ```
+
+**New here? Read [`../../docs/GUIDE.md`](../../docs/GUIDE.md) first** — the same project
+explained in plain words, no jargon.
 
 ## Tools
 
 The server is not just an advisor — it is the **local authority downstream services point
-at** during an outage. Nine of the thirteen tools exist for that fallback role.
+at** during an outage. Eleven of the seventeen tools exist for that fallback role.
 
 | Tool | Real logic? | What it does |
 |---|---|---|
@@ -41,6 +44,10 @@ at** during an outage. Nine of the thirteen tools exist for that fallback role.
 | `verify_local_token` | **real** | signature, expiry, audience, continuity marker |
 | `get_fallback_endpoint` | **real** | the endpoint downstream should switch to |
 | `reconcile_delta` | **real** | drains the audit ledger for replay on recovery |
+| `get_beacon` | **real** | signed beacon, served in every mode: cloud / local / drill |
+| `probe_idp` | **real** | checks DNS, TLS and HTTP separately; drives automatic mode changes |
+| `set_auto_mode` | **real** | turns automatic outage detection on or off (opt-in) |
+| `admin_bootstrap` | **real** | admin token in, tenant-bound API key out (shown once) |
 
 ## Downstream fallback — how a service survives the outage
 
